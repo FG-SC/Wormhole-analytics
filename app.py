@@ -18,10 +18,16 @@ def load_data():
 tweets_sheet, account_analytics = load_data()
 
 # Preprocess data
+
+account_analytics['Date'] = pd.to_datetime(account_analytics['Date'])
+account_analytics = account_analytics.sort_values(by='Date')
+
 account_analytics['followers'] = (account_analytics['New follows'] - account_analytics['Unfollows']).cumsum()
+
 tweets_sheet['Date'] = pd.to_datetime(tweets_sheet['Date'])
 tweets_sheet['tweet_length'] = tweets_sheet['Post text'].apply(lambda x: len(str(x)))
 
+tweets_sheet = tweets_sheet.sort_values(by='Date')
 # Sidebar controls
 st.sidebar.header("Filters")
 date_range = st.sidebar.date_input("Select date range", 
@@ -35,6 +41,7 @@ st.header("Account Overview")
 
 # Follower growth chart
 fig_followers = go.Figure()
+
 fig_followers.add_trace(go.Scatter(x=account_analytics['Date'], y=account_analytics['followers'],
                                  mode='lines', name='Followers'))
 fig_followers.update_layout(title="Follower Growth Over Time",
@@ -48,8 +55,22 @@ fig_corr = px.imshow(corr_matrix, text_auto=True, aspect="auto",
                     x=corr_matrix.columns, y=corr_matrix.columns)
 st.plotly_chart(fig_corr, use_container_width=True)
 
+
 # Engagement Analysis Section
 st.header("Engagement Analysis")
+
+# Daily aggregated engagement metrics
+daily_engagement = tweets_sheet.set_index('Date').resample('D').agg({
+    'Likes': 'sum',
+    'Reposts': 'sum',
+    'Replies': 'sum',
+    'Bookmarks': 'sum',
+    'Impressions': 'sum'
+}).reset_index()
+
+# Create cumulative engagement
+for metric in ['Likes', 'Reposts', 'Replies', 'Bookmarks']:
+    daily_engagement[f'cum_{metric}'] = daily_engagement[metric].cumsum()
 
 # Time series of engagement metrics
 fig_engagement = go.Figure()
@@ -58,34 +79,76 @@ colors = ['#FF006E', '#8338EC', '#3A86FF', '#FFBE0B']
 
 for metric, color in zip(metrics, colors):
     fig_engagement.add_trace(go.Scatter(
-        x=tweets_sheet['Date'], 
-        y=tweets_sheet[metric],
+        x=daily_engagement['Date'], 
+        y=daily_engagement[metric],
         name=metric,
         line=dict(color=color),
-        stackgroup='one'  # Remove for individual lines
+        stackgroup='one'
     ))
 
-fig_engagement.update_layout(title="Engagement Metrics Over Time",
+fig_engagement.update_layout(title="Daily Engagement Metrics",
                            xaxis_title="Date", yaxis_title="Count")
 st.plotly_chart(fig_engagement, use_container_width=True)
 
+# Engagement Rate Analysis
+st.subheader("Engagement Rate Analysis")
+tweets_sheet['engagement_rate'] = tweets_sheet['Engagements']/tweets_sheet['Impressions']
+
+# Calculate mean engagement rate
+mean_engagement_rate = tweets_sheet['engagement_rate'].mean()
+
+# Create the histogram with Plotly
+fig_engagement_rate = go.Figure()
+
+# Add histogram trace
+fig_engagement_rate.add_trace(go.Histogram(
+    x=tweets_sheet['engagement_rate'],
+    nbinsx=50,
+    name='Engagement Rate',
+    marker_color='#1f77b4'
+))
+
+# Add mean line
+fig_engagement_rate.add_vline(
+    x=mean_engagement_rate,
+    line_dash="dash",
+    line_color="red",
+    annotation_text=f"Mean: {mean_engagement_rate:.2%}",
+    annotation_position="top right"
+)
+
+# Update layout
+fig_engagement_rate.update_layout(
+    title="Distribution of Engagement Rates",
+    xaxis_title="Engagement Rate",
+    yaxis_title="Count",
+    showlegend=False
+)
+
+st.plotly_chart(fig_engagement_rate, use_container_width=True)
 # Content Analysis Section
 st.header("Content Analysis")
 
 # Extract mentions and hashtags
 def extract_features(text, pattern):
-    return re.findall(pattern, str(text))
+    return [mention for mention in re.findall(pattern, str(text))]
+
+# Update the extract_features function to handle case sensitivity
+def extract_features2(text, pattern):
+    return [mention.lower() for mention in re.findall(pattern, str(text))]
 
 tweets_sheet['mentions'] = tweets_sheet['Post text'].apply(
-    lambda x: extract_features(x, r'@(\w+)'))
+    lambda x: extract_features2(x, r'@(\w+)'))
 tweets_sheet['hashtags'] = tweets_sheet['Post text'].apply(
     lambda x: extract_features(x, r'#(\w+)'))
 
+
 # Top mentions analysis
-mentions_counts = pd.Series([mention for sublist in tweets_sheet['mentions'] for mention in sublist]).value_counts().head(10)
+mentions_counts = pd.Series([mention for sublist in tweets_sheet['mentions'] for mention in sublist]).value_counts().head(20)
+
 fig_mentions = px.bar(mentions_counts, 
                      labels={'index': 'Mention', 'value': 'Count'},
-                     title="Top 10 Mentions")
+                     title="Top 20 Mentions")
 st.plotly_chart(fig_mentions, use_container_width=True)
 
 # Impact of mentions on impressions
@@ -95,6 +158,8 @@ for mention in mentions_counts.index:
     mention_effect.append({'Mention': mention, 'Avg Impressions': avg_impression})
 
 mention_effect_df = pd.DataFrame(mention_effect)
+
+
 fig_mention_impact = px.bar(mention_effect_df, x='Mention', y='Avg Impressions',
                            title="Average Impressions by Mention")
 st.plotly_chart(fig_mention_impact, use_container_width=True)
