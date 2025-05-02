@@ -25,7 +25,7 @@ account_analytics = st.file_uploader("Upload your account_overview_analytics per
 if account_analytics is not None:
     account_analytics= pd.read_csv(account_analytics)
 
-    account_analytics['Date'] = pd.to_datetime(account_analytics['Date'])
+    account_analytics['Date'] = pd.to_datetime(account_analytics['Date'], format='mixed')
     account_analytics = account_analytics.sort_values(by='Date')
 
     account_analytics['followers'] = (account_analytics['New follows'] - account_analytics['Unfollows']).cumsum()
@@ -33,7 +33,7 @@ if account_analytics is not None:
 if tweets_sheet is not None:
     tweets_sheet = pd.read_csv(tweets_sheet)
 
-    tweets_sheet['Date'] = pd.to_datetime(tweets_sheet['Date'])
+    tweets_sheet['Date'] = pd.to_datetime(tweets_sheet['Date'], format='mixed')
     tweets_sheet['tweet_length'] = tweets_sheet['Post text'].apply(lambda x: len(str(x)))
 
     tweets_sheet = tweets_sheet.sort_values(by='Date')
